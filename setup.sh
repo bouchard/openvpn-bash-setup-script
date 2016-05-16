@@ -13,8 +13,7 @@ ipvar=$(dig +short myip.opendns.com @resolver1.opendns.com) #grab our IP
 echo "$ipvar"
 
 # USER INFO
-vpnclient="UDPclient" # Name of the regular config file
-vpnclientTCP="TCPclient" # Name of the TCP config file
+vpnclient="diyVPN" # Name of the regular config file
 vpncipher="BF-CBC" # BF-CBC AES-128-CBC AES-256-CBC
 verbosity="0"
 
@@ -51,21 +50,6 @@ verb $verbosity
 user nobody
 group nogroup
 cipher $vpncipher"
-ovpnsetstcp="client
-remote $ipvar 443
-dev tun1
-proto tcp
-key-direction 1
-nobind
-float
-persist-key
-persist-tun
-ns-cert-type server
-comp-lzo
-verb $verbosity
-user nobody
-group nogroup
-cipher $vpncipher"
 udpserver="port 1194
 proto udp
 dev tun0
@@ -75,29 +59,6 @@ key server.key
 tls-auth ta.key 0
 dh dh2048.pem
 server 10.8.0.0 255.255.255.0
-ifconfig-pool-persist ipp.txt
-push \"redirect-gateway def1 bypass-dhcp\"
-push \"dhcp-option DNS 208.67.222.222\"
-push \"dhcp-option DNS 208.67.220.220\"
-duplicate-cn
-keepalive 10 120
-cipher $vpncipher
-comp-lzo
-user nobody
-group nogroup
-persist-key
-persist-tun
-status openvpn-status.log
-verb $verbosity"
-tcpserver="port 443
-proto tcp
-dev tun1
-ca ca.crt
-cert server.crt
-key server.key
-tls-auth ta.key 0
-dh dh2048.pem
-server 10.8.8.0 255.255.255.0
 ifconfig-pool-persist ipp.txt
 push \"redirect-gateway def1 bypass-dhcp\"
 push \"dhcp-option DNS 208.67.222.222\"
@@ -136,10 +97,6 @@ rotaterules='/var/log/apt-security-updates {
 touch /etc/openvpn/udpserver.conf
 echo "$udpserver" > /etc/openvpn/udpserver.conf
 
-# TCP Server
-touch /etc/openvpn/tcpserver.conf
-echo "$tcpserver" > /etc/openvpn/tcpserver.conf
-
 #enable packet forwarding in this session
 echo 1 > /proc/sys/net/ipv4/ip_forward
 
@@ -149,7 +106,6 @@ sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/g' /etc/sysctl.conf
 # uncomplicated firewall (ufw) configuration
 ufw allow ssh
 ufw allow 1194/udp
-ufw allow 443/tcp
 sed -i 's/DEFAULT_FORWARD_POLICY="DROP"/DEFAULT_FORWARD_POLICY="ACCEPT"/g' /etc/default/ufw #enable packet forwarding for firewall also
 beforerules=$(awk -v ufwholder="$ufwrules" '!/^#/ && !p {print ufwholder; p=1} 1' /etc/ufw/before.rules) #write ufw rules
 echo "$beforerules" > /etc/ufw/before.rules
@@ -223,36 +179,11 @@ clientkeys="
 "
 echo "$clientkeys" >> /etc/openvpn/easy-rsa/keys/$vpnclient.ovpn
 
-############ TCP ################
-
-#build client keys
-
-KEY_CN=$vpnclientTCP ./build-key --batch $vpnclientTCP
-touch /etc/openvpn/easy-rsa/keys/$vpnclientTCP.ovpn
-echo "$ovpnsetstcp" >> /etc/openvpn/easy-rsa/keys/$vpnclientTCP.ovpn
-
-# insert client keys into ovpn
-clientkeystcp="
-<ca>
-"$(</etc/openvpn/ca.crt)"
-</ca>
-<cert>
-"$(</etc/openvpn/easy-rsa/keys/$vpnclientTCP.crt)"
-</cert>
-<key>
-"$(</etc/openvpn/easy-rsa/keys/$vpnclientTCP.key)"
-</key>
-<tls-auth>
-"$(</etc/openvpn/ta.key)"
-</tls-auth>
-"
-echo "$clientkeystcp" >> /etc/openvpn/easy-rsa/keys/$vpnclientTCP.ovpn
 # auto security updates
 touch /etc/cron.daily/apt-security-updates
 touch /etc/logrotate.d/apt-security-updates
 echo $updaterules > /etc/cron.daily/apt-security-updates
 echo $rotaterules > /etc/logrotate.d/apt-security-updates
 sudo chmod +x /etc/cron.daily/apt-security-updates
-cp /etc/openvpn/easy-rsa/keys/$vpnclientTCP.ovpn ~
 cp /etc/openvpn/easy-rsa/keys/$vpnclient.ovpn ~
 sudo reboot
